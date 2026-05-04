@@ -1,72 +1,51 @@
 import os
-import http.server
-import socketserver
-import threading
+import telebot
+from flask import Flask
+from threading import Thread
 
-def run_on_render():
-    PORT = int(os.environ.get("PORT", 10000))
-    handler = http.server.SimpleHTTPRequestHandler
-    with socketserver.TCPServer(("", PORT), handler) as httpd:
-        httpd.serve_forever()
+# 1. Render uchun kichik Web-Server (Bot o'chib qolmasligi uchun)
+app = Flask('')
 
-threading.Thread(target=run_on_render, daemon=True).start()
-import urllib.request
-import urllib.parse
-import json
-import time
+@app.route('/')
+def home():
+    return "Bot ishlamoqda!"
 
-# Ma'lumotlar bazasini import qilish
-try:
-    from dorilar import DORI_BAZASI
-except ImportError:
-    from newfile import DORI_BAZASI
+def run():
+    # Render avtomatik ravishda PORT taqdim etadi
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
 
-# Bot sozlamalari
-TOKEN = "8764111707:AAFzU3CuTSNlkhzB6Ah3rQaUKnDc41DE9Gw"
-BASE_URL = f"https://api.telegram.org/bot{TOKEN}/"
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
 
-def call_method(method, params=None):
-    url = BASE_URL + method
-    if params:
-        query_string = urllib.parse.urlencode(params)
-        url += "?" + query_string
-    try:
-        with urllib.request.urlopen(url, timeout=20) as response:
-            return json.loads(response.read().decode())
-    except:
-        return None
+# 2. Bot sozlamalari (Tokeningizni bu yerga qo'ying)
+TOKEN = "SIZNING_BOT_TOKENINGIZ" # <-- O'z tokeningizni yozing
+bot = telebot.TeleBot(TOKEN)
 
-def main():
-    last_update_id = 0
-    print("--- BOT ISHGA TUSHDI ---")
-    print(f"Bazada {len(DORI_BAZASI)} ta dori mavjud.")
-    
-    while True:
-        updates = call_method("getUpdates", {"offset": last_update_id + 1, "timeout": 30})
-        
-        if updates and updates.get("result"):
-            for update in updates["result"]:
-                last_update_id = update["update_id"]
-                
-                if "message" in update and "text" in update["message"]:
-                    chat_id = update["message"]["chat"]["id"]
-                    user_text = update["message"]["text"].lower().strip()
-                    
-                    if user_text == "/start":
-                        reply = "Salom! Dori nomini yozing."
-                    elif user_text in DORI_BAZASI:
-                        info = DORI_BAZASI[user_text]
-                        # Agar info lug'at bo'lsa uz qismini oladi, aks holda matnni o'zini
-                        if isinstance(info, dict):
-                            reply = info.get("uz", "Ma'lumot topilmadi")
-                        else:
-                            reply = info
-                    else:
-                        reply = "Bunday dori bazada yo'q"
-                    
-                    call_method("sendMessage", {"chat_id": chat_id, "text": reply})
-        
-        time.sleep(1)
+# 3. Tibbiy lug'at (Baza)
+dori_bazasi = {
+    "furatsilin": "Tomoqni chayish va jarohatlarni yuvish uchun mikrobga qarshi vosita.",
+    "mezim": "Ovqat hazm qilishni yaxshilovchi fermentlar majmuasi.",
+    "diklofenak": "Bo'g'im va mushak og'riqlarida yallig'lanishga qarshi vosita.",
+    "yodomarin": "Qalqonsimon bez kasalliklarining oldini olish va davolash uchun yod preparati."
+}
 
+@bot.message_handler(commands=['start'])
+def salom(message):
+    bot.reply_to(message, "Salom! Dori nomini yozing, men u haqida ma'lumot beraman.")
+
+@bot.message_handler(func=lambda message: True)
+def dori_qidirish(message):
+    nomi = message.text.lower().strip()
+    javob = dori_bazasi.get(nomi, "Bunday dori bazada yo'q")
+    if nomi in dori_bazasi:
+        bot.reply_to(message, f"💊 {nomi.capitalize()}: {javob}")
+    else:
+        bot.reply_to(message, javob)
+
+# 4. Serverni va Botni ishga tushirish
 if __name__ == "__main__":
-    main()
+    keep_alive() # Avval serverni yoqamiz
+    print("Bot Render-da ishga tushishga tayyor...")
+    bot.infinity_polling() # Keyin botni yoqamiz
